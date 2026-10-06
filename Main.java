@@ -2,12 +2,9 @@ import java.util.Comparator;
 import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.TreeMap;
+import java.nio.file.Path;
 
 public class Main {
-    private static final int LIMITE_ALEATORIOS = 100_000;
-    private static final double PROBABILIDADE_FILA_2 = 0.20;
-    private static final double PROBABILIDADE_SAIR_FILA_3 = 0.30;
-
     private static final GenRandomNumber GERADOR = new GenRandomNumber();
     private static final PriorityQueue<Evento> eventos = new PriorityQueue<>(
             Comparator.comparingDouble(Evento::tempo));
@@ -17,9 +14,14 @@ public class Main {
     private static Fila fila3;
     private static int aleatoriosUsados;
     private static double tempoAtual;
+    private static int limiteAleatorios;
+    private static double probabilidadeFila2;
+    private static double probabilidadeSairFila3;
 
-    public static void main(String[] args) {
-        inicializar();
+    public static void main(String[] args) throws Exception {
+        Path caminhoConfiguracao = Path.of(args.length > 0 ? args[0] : "config.yml");
+        Configuracao configuracao = Configuracao.carregar(caminhoConfiguracao);
+        inicializar(configuracao);
         while (!eventos.isEmpty()) {
             Evento evento = eventos.poll();
             acumularTempo(evento.tempo);
@@ -28,14 +30,31 @@ public class Main {
         imprimirRelatorio();
     }
 
-    private static void inicializar() {
-        fila1 = new Fila("Fila 1", 1, Integer.MAX_VALUE, 2, 4, 1, 2);
-        fila2 = new Fila("Fila 2", 2, 5, 0, 0, 4, 6);
-        fila3 = new Fila("Fila 3", 2, 10, 0, 0, 5, 15);
+    private static void inicializar(Configuracao configuracao) {
+        limiteAleatorios = configuracao.inteiro("rndnumbersPerSeed");
+        probabilidadeFila2 = configuracao.numero("routing.queue2");
+        probabilidadeSairFila3 = configuracao.numero("routing.leaveQueue3");
+
+        fila1 = criarFila(configuracao, "Q1", "Fila 1");
+        fila2 = criarFila(configuracao, "Q2", "Fila 2");
+        fila3 = criarFila(configuracao, "Q3", "Fila 3");
         eventos.clear();
         aleatoriosUsados = 0;
         tempoAtual = 0;
-        eventos.offer(new Evento(2.0, TipoEvento.CHEGADA_FILA_1));
+        eventos.offer(new Evento(configuracao.numero("arrivals.Q1"),
+                TipoEvento.CHEGADA_FILA_1));
+    }
+
+    private static Fila criarFila(Configuracao configuracao, String chave, String nome) {
+        String prefixo = "queues." + chave + ".";
+        return new Fila(
+                nome,
+                configuracao.inteiro(prefixo + "servers"),
+                configuracao.inteiro(prefixo + "capacity"),
+                configuracao.numero(prefixo + "minArrival"),
+                configuracao.numero(prefixo + "maxArrival"),
+                configuracao.numero(prefixo + "minService"),
+                configuracao.numero(prefixo + "maxService"));
     }
 
     private static void processar(Evento evento) {
@@ -53,8 +72,9 @@ public class Main {
             case SAIDA_FILA_1 -> {
                 processarSaida(fila1, evento.tempo, TipoEvento.SAIDA_FILA_1);
                 if (podeSortear()) {
-                    TipoEvento destino = sorteio() < PROBABILIDADE_FILA_2
-                            ? TipoEvento.ENTRADA_FILA_2 : TipoEvento.ENTRADA_FILA_3;
+                    TipoEvento destino = sorteio() < probabilidadeFila2
+                            ? TipoEvento.ENTRADA_FILA_2
+                            : TipoEvento.ENTRADA_FILA_3;
                     eventos.offer(new Evento(evento.tempo, destino));
                 }
             }
@@ -65,9 +85,9 @@ public class Main {
                 processarSaida(fila2, evento.tempo, TipoEvento.SAIDA_FILA_2);
                 if (podeSortear()) {
                     double rota = sorteio();
-                    if (rota >= PROBABILIDADE_FILA_2) {
+                    if (rota >= probabilidadeFila2) {
                         eventos.offer(new Evento(evento.tempo,
-                            rota < 0.5 ? TipoEvento.ENTRADA_FILA_1
+                                rota < 0.5 ? TipoEvento.ENTRADA_FILA_1
                                         : TipoEvento.ENTRADA_FILA_2));
                     }
                 }
@@ -77,7 +97,7 @@ public class Main {
             }
             case SAIDA_FILA_3 -> {
                 processarSaida(fila3, evento.tempo, TipoEvento.SAIDA_FILA_3);
-                if (podeSortear() && sorteio() >= PROBABILIDADE_SAIR_FILA_3) {
+                if (podeSortear() && sorteio() >= probabilidadeSairFila3) {
                     eventos.offer(new Evento(evento.tempo, TipoEvento.ENTRADA_FILA_3));
                 }
             }
@@ -123,7 +143,7 @@ public class Main {
     }
 
     private static boolean podeSortear() {
-        return aleatoriosUsados < LIMITE_ALEATORIOS;
+        return aleatoriosUsados < limiteAleatorios;
     }
 
     private static void acumularTempo(double proximoTempo) {
