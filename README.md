@@ -5,9 +5,9 @@ Nomes:
  # Como Compilar?
   - rode o seguinte comando:
     ```bash
-    javac main.java GenRandomNumber.java
+    javac Main.java GenRandomNumber.java
     ```
     - e depois
     ```bash
-    java main.java
+    java Main
     ```
